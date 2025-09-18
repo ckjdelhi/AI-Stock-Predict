@@ -5,6 +5,7 @@ Python script `nse_monthly_forecast.py` builds a ranked list of NIFTY 100 stocks
 ## Key Features
 - Fetches NIFTY 50 + NIFTY NEXT 50 constituents from NSE JSON endpoints (falls back to Wikipedia).
 - Historical prices via `nsepy` (preferred) else `yfinance` fallback.
+- Historical prices via `nsepy` (preferred; see flag below) else `yfinance` fallback.
 - Ensemble forecast: Holt-Winters (log) + drift (average recent log return).
 - Momentum (≈1 quarter), relative strength vs synthetic equal‑weight NIFTY50, volatility (21d & 63d), and risk-adjusted return metrics.
 - Composite score with configurable weights (expected return, momentum, relative strength, risk-adjusted return).
@@ -28,6 +29,10 @@ Basic run with defaults:
 ```
 python nse_monthly_forecast.py
 ```
+Use nsepy explicitly (experimental; disables by default due to upstream threading bug):
+```
+python nse_monthly_forecast.py --nsepy
+```
 Common overrides:
 ```
 python nse_monthly_forecast.py --years 4 --horizon 30 --mom 84 --rs 84 --max 90
@@ -45,6 +50,7 @@ python nse_monthly_forecast.py --quiet
 | `--rs` | Relative strength window | 63 |
 | `--max` | Max tickers to process | 100 |
 | `--quiet` | Disable debug prints | False |
+| `--nsepy` | Force use `nsepy` for history (experimental) | False |
 
 ## Output Columns (CSV)
 - `ticker` – NSE symbol (.NS suffix when using Yahoo).
@@ -84,6 +90,7 @@ Sum does not need to be 1.0; weights are linear multipliers.
 | 403 errors on constituents | Blocked by NSE/Wikipedia | Retry later, ensure User-Agent intact, or reduce frequency |
 | Empty CSV | All scores NaN (insufficient data) | Increase history years, reduce MIN_OBS, verify connectivity |
 | Many NaN forecasts | Model failed or extreme returns filtered | Inspect individual series; reduce filter threshold |
+| ValueError: "identically-labeled Series" during sort | Non-scalar values (e.g., Series) got into DataFrame columns | Update to latest `predict_options_with_sl.py`; ensure you coerce scalars before sorting and flatten yfinance MultiIndex columns |
 
 Enable debug (default True) to see extra diagnostics. Set `--quiet` to suppress.
 

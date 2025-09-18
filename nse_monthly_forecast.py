@@ -64,6 +64,7 @@ MAX_TICKERS = 100              # Safety cap
 MAX_WORKERS = 8                # Parallel downloads
 NSE_PAUSE = 0.2                # polite pause between NSE calls (seconds)
 DEBUG = True                   # set False to silence debug prints
+USE_NSEPY = False              # default off due to nsepy threading bug ('ThreadReturns' has no attribute 'result')
 
 # Scoring weights (can be overridden via CLI later if desired)
 W_EXP_RET = 0.45
@@ -150,15 +151,22 @@ def get_nifty_100_symbols() -> tuple[List[str], List[str]]:
 
 def _fetch_history_single(symbol: str, start: datetime, end: datetime) -> pd.Series | None:
     base_symbol = symbol.replace(".NS", "")
-    if get_history is not None:
+    if USE_NSEPY and get_history is not None:
         try:
-            df = get_history(symbol=base_symbol, start=start.date(), end=end.date())
-            if not df.empty and "Close" in df:
-                s = df["Close"].astype(float)
-                s.index = pd.to_datetime(s.index)
-                return s.sort_index()
-        except Exception:
-            pass
+            # Known nsepy bug (multi-thread concat AttributeError). We isolate & suppress.
+            df = get_history(symbol=base_symbol, start=start.date(), end=end.date())  # type: ignore
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                col = 'Close' if 'Close' in df.columns else None
+                if col:
+                    s = df[col].astype(float)
+                    s.index = pd.to_datetime(s.index)
+                    return s.sort_index()
+        except AttributeError as e:  # specific noisy bug
+            if DEBUG:
+                print(f"[WARN] nsepy failed for {base_symbol}: {e}. Falling back to yfinance.")
+        except Exception as e:
+            if DEBUG:
+                print(f"[WARN] nsepy other error for {base_symbol}: {e}")
     if yf is not None:
         try:
             df = yf.download(symbol, start=start, end=end + timedelta(days=1), progress=False, interval="1d", auto_adjust=False, threads=False)
@@ -437,7 +445,7 @@ def run_pipeline():
 
 def main():  # entrypoint
     # Declare globals before any usage (needed because we assign later)
-    global YEARS_HISTORY, FORECAST_HORIZON, MOMENTUM_WINDOW, REL_STRENGTH_WINDOW, MAX_TICKERS, DEBUG
+    global YEARS_HISTORY, FORECAST_HORIZON, MOMENTUM_WINDOW, REL_STRENGTH_WINDOW, MAX_TICKERS, DEBUG, USE_NSEPY
 
     parser = argparse.ArgumentParser(description="NSE monthly-ish forecast ranker")
     parser.add_argument("--years", type=int, default=YEARS_HISTORY, help="History years to download")
@@ -446,6 +454,7 @@ def main():  # entrypoint
     parser.add_argument("--rs", type=int, default=REL_STRENGTH_WINDOW, help="Relative strength window")
     parser.add_argument("--max", type=int, default=MAX_TICKERS, help="Max tickers")
     parser.add_argument("--quiet", action="store_true", help="Silence debug output")
+    parser.add_argument("--nsepy", action="store_true", help="Force use nsepy for history (experimental)")
     args = parser.parse_args()
 
     YEARS_HISTORY = args.years
@@ -455,6 +464,8 @@ def main():  # entrypoint
     MAX_TICKERS = args.max
     if args.quiet:
         DEBUG = False
+    if args.nsepy:
+        USE_NSEPY = True
 
     start_time = time.time()
     run_pipeline()
