@@ -2,10 +2,8 @@
 # Pin versions as needed; below are broadly compatible minimums.
 # You can run: pip install -r requirement.txt
 
-pandas>=2.0.0
 numpy>=1.24.0
 requests>=2.31.0
-statsmodels>=0.14.0
 tqdm>=4.65.0
 yfinance>=0.2.30
 nsepy>=0.8
@@ -15,4 +13,13 @@ beautifulsoup4>=4.12.0 # optional (pandas may use it)
 # (Optional) For timezone & date handling improvements
 python-dateutil>=2.8.2
 pytz>=2023.3
+
 scikit-learn
+matplotlib
+seaborn
+scipy
+statsmodels>=0.14.0
+pandas>=2.0.0
+
+# deep learning
+tensorflow

@@ -67,22 +67,44 @@ def get_universe(max_tickers: int = 100, include_next50: bool = True) -> list[st
             s50 = merged
             snext = []
     symbols = s50 + (snext if include_next50 else [])
-    # Deduplicate and cut to max
+    
+    # Deduplicate and cut to max, with validation
     uniq = []
     seen = set()
+    invalid_patterns = ['NIFTY', '50', 'NEXT', 'INDEX']  # Common invalid symbols
+    
     for sym in symbols:
-        if sym and sym not in seen:
-            seen.add(sym)
-            uniq.append(sym)
+        # Validate symbol: must be non-empty string, alphanumeric with &/-
+        if not sym or not isinstance(sym, str):
+            continue
+        sym = sym.strip().upper()
+        # Skip invalid symbols
+        if any(pattern in sym for pattern in invalid_patterns):
+            continue
+        # Skip pure numbers or very short symbols
+        if sym.isdigit() or len(sym) < 2:
+            continue
+        # Skip if already seen
+        if sym in seen:
+            continue
+        
+        seen.add(sym)
+        uniq.append(sym)
+        
         if len(uniq) >= max_tickers:
             break
+    
     return [s + ".NS" for s in uniq]
 
 def fetch_data(ticker, period="6mo"):
     try:
+        # Skip tickers with invalid format
+        if not ticker or not isinstance(ticker, str) or len(ticker) < 3:
+            return None
+            
         # Disable progress bar and threads for consistency; fetch daily bars
         data = yf.download(ticker, period=period, interval="1d", progress=False, threads=False, auto_adjust=False)
-        if data.empty:
+        if data is None or data.empty:
             return None
         # If yfinance returns MultiIndex columns (e.g., level 0: OHLCV, level 1: ticker),
         # drop the ticker level when it's a single symbol to get flat columns.
@@ -169,12 +191,21 @@ def main():
 
     results = []
     universe = get_universe(max_tickers=args.max, include_next50=(not args.nifty50_only))
-    for stock in universe:
+    print(f"\nScanning {len(universe)} stocks...")
+    print(f"First 5 symbols: {universe[:5]}")
+    
+    for i, stock in enumerate(universe, 1):
+        print(f"Processing {i}/{len(universe)}: {stock}...", end=" ")
         data = fetch_data(stock, period=args.period)
         if data is not None and len(data) > 30:
             pred, close, sl, tgt, d_tgt, w_tgt, m_tgt = train_and_predict(data)
             if pred == 1:
                 results.append((stock, close, sl, tgt, d_tgt, w_tgt, m_tgt))
+                print("✓ Bullish")
+            else:
+                print("✗ Not bullish")
+        else:
+            print("✗ Insufficient data")
     
     df = pd.DataFrame(results, columns=["Stock", "Last Close", "Stoploss", "Target", "Daily Target", "Weekly Target", "Monthly Target"])
     # Ensure values are numeric scalars for safe sorting
